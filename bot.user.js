@@ -4,7 +4,7 @@
 // @include     http://agar.io/
 // @version     3.21
 // @grant       none
-// @author      http://www.twitch.tv/apostolique
+// @require     https://cdnjs.cloudflare.com/ajax/libs/underscore.js/1.8.3/underscore-min.js
 // ==/UserScript==
 
 
@@ -15,23 +15,6 @@ Number.prototype.mod = function(n) {
 Array.prototype.peek = function() {
     return this[this.length - 1];
 };
-
-$.get('https://raw.githubusercontent.com/Apostolique/Agar.io-bot/master/bot.user.js?1', function(data) {
-    var latestVersion = data.replace(/(\r\n|\n|\r)/gm,"");
-    latestVersion = latestVersion.substring(latestVersion.indexOf("// @version")+11,latestVersion.indexOf("// @grant"));
-
-    latestVersion = parseFloat(latestVersion + 0.0000);
-    var myVersion = parseFloat(GM_info.script.version + 0.0000); 
-	
-	if(latestVersion > myVersion)
-	{
-		alert("Update Available for bot.user.js: V" + latestVersion + "\nGet the latest version from the GitHub page.");
-        window.open('https://github.com/Apostolique/Agar.io-bot/blob/master/bot.user.js','_blank');
-	}
-	console.log('Current bot.user.js Version: ' + myVersion + " on Github: " + latestVersion);
-});
-
-
 
 console.log("Running Apos Bot!");
 (function(f, g) {
@@ -77,6 +60,12 @@ console.log("Running Apos Bot!");
         return distance;
     }
 
+    function distance(a, b) {
+        var xx = a.x - b.x;
+        var yy = a.y - b.y;
+        return Math.sqrt(xx * xx + yy * yy);
+    }
+
     function computerDistanceFromCircleEdge(x1, y1, x2, y2, s2) {
         var tempD = computeDistance(x2, y2, x1, y1);
 
@@ -92,148 +81,146 @@ console.log("Running Apos Bot!");
         return computeDistance(x1, y1, offsetX, offsetY);
     }
 
-    function getListBasedOnFunction(booleanFunction, listToUse) {
-        var dotList = [];
-        var interNodes = getMemoryCells();
-        Object.keys(listToUse).forEach(function(element, index) {
-            if (booleanFunction(element)) {
-                dotList.push(interNodes[element]);
-            }
-        });
-
-        return dotList;
-    }
-
-
     function compareSize(player1, player2, ratio) {
-        if (player1.size * player1.size * ratio < player2.size * player2.size) {
-            return true;
-        }
-        return false;
+        var s1 = player1.size,
+            s2 = player2.size;
+        return s1 * s1 * ratio < s2 * s2;
     }
 
     function canSplit(player1, player2) {
-        return compareSize(player1, player2, 2.30) && !compareSize(player1, player2, 9);
+        return compareSize(player1, player2, 2.50) && !compareSize(player1, player2, 3.5);
+    }
+
+    function touchDistance(a, b) {
+        return distance(a, b) - a.size - b.size;
+    }
+
+    function touches(a, b) {
+        return touchDistance(a, b) < 0;
+    }
+
+    function subVec(a, b) {
+        // a - b
+        return {x: a.x - b.x , y: a.y - b.y};
+    }
+
+    function addVec(a, b) {
+        return {x: a.x + b.x , y: a.y + b.y};
     }
 
     function processEverything(listToUse) {
         Object.keys(listToUse).forEach(function(element, index) {
-            computeAngleRanges(listToUse[element], getPlayer()[0]);
+            computeAngleRanges(listToUse[element], getPlayers()[0]);
         });
     }
 
-    function getAll() {
-        var dotList = [];
-        var player = getPlayer();
-        var interNodes = getMemoryCells();
-
-        dotList = getListBasedOnFunction(function(element) {
-            var isMe = false;
-
-            for (var i = 0; i < player.length; i++) {
-                if (interNodes[element].id == player[i].id) {
-                    isMe = true;
-                    break;
-                }
-            }
-
-            for (var i = 0; i < player.length; i++) {
-                if (!isMe) {
-                    return true;
-                }
-                return false;
-            }
-        }, interNodes);
-
-        return dotList;
+    function getAllOthers() {
+        var players = getPlayers();
+        return _.filter(getMemoryCells(),  function(e){
+            return ! _.contains(players, e.id);
+        });
     }
 
     function getAllThreats(blob) {
-        var dotList = [];
-        var player = getPlayer();
-        var interNodes = getMemoryCells();
-
-        dotList = getListBasedOnFunction(function(element) {
-            var isMe = false;
-
-            for (var i = 0; i < player.length; i++) {
-                if (interNodes[element].id == player[i].id) {
-                    isMe = true;
-                    break;
-                }
-            }
-
-            if (!isMe && (!interNodes[element].d && compareSize(blob, interNodes[element], 1.30))) {
-                return true;
-            } else if (interNodes[element].d && compareSize(interNodes[element], blob, 1.30)) {
-                return true;
-            }
-            return false;
-        }, interNodes);
-
-        return dotList;
+        return _.filter(getAllOthers(),  function(e){
+            // Another player and
+            return !e.d &&
+                // Larger and touching or
+                (compareSize(blob, e, 1.20) && touchDistance(blob, e) < blob.size * 0.5 ||
+                // Can split and close enough
+                canSplit(blob, e) && touchDistance(blob, e) < e.size * 2);
+        });
     }
 
     function getAllFood(blob) {
-        var elementList = [];
-        var dotList = [];
-        var player = getPlayer();
-        var interNodes = getMemoryCells();
-
-        elementList = getListBasedOnFunction(function(element) {
-            var isMe = false;
-
-            for (var i = 0; i < player.length; i++) {
-                if (interNodes[element].id == player[i].id) {
-                    isMe = true;
-                    break;
-                }
-            }
-
-            if (!isMe && !interNodes[element].d && compareSize(interNodes[element], blob, 1.30) || (interNodes[element].size <= 11)) {
-                return true;
-            } else {
-                return false;
-            }
-        }, interNodes);
-
-        for (var i = 0; i < elementList.length; i++) {
-            dotList.push([elementList[i].x, elementList[i].y, elementList[i].size]);
-        }
-
-        return dotList;
+        return _.filter(getAllOthers(),  function(e){
+            return (!e.d &&
+                    compareSize(e, blob, 1.30) &&
+                    touchDistance(blob, e) < blob.size * 0.3) ||
+                   e.size <= 11;
+        });
     }
+
+    function getAllPrey(blob) {
+        return _.filter(getAllOthers(), function(e) {
+            return !e.d && canSplit(e, blob) && distance(blob, e) < e.size * 5;
+        });
+    }
+
 
     function clusterFood(foodList, blobSize) {
         var clusters = [];
         var addedCluster = false;
-
-        //1: x
-        //2: y
-        //3: size or value
-        //4: Angle, not set here.
-
         for (var i = 0; i < foodList.length; i++) {
+            var food = foodList[i];
             for (var j = 0; j < clusters.length; j++) {
-                if (computeDistance(foodList[i][0], foodList[i][1], clusters[j][0], clusters[j][1]) < blobSize * 1.5) {
-                    clusters[j][0] = (foodList[i][0] + clusters[j][0]) / 2;
-                    clusters[j][1] = (foodList[i][1] + clusters[j][1]) / 2;
-                    clusters[j][2] += foodList[i][2];
+                var cluster = clusters[j];
+                if (computeDistance(food, cluster) < blobSize * 1.5) {
+                    cluster.x = (food.x + cluster.x) / 2;
+                    cluster.y = (food.y + cluster.y) / 2;
+                    cluster.size += food.size;
                     addedCluster = true;
                     break;
                 }
             }
             if (!addedCluster) {
-                clusters.push([foodList[i][0], foodList[i][1], foodList[i][2], 0]);
+                clusters.push({x: food.x, y: food.y, size: food.size});
             }
             addedCluster = false;
         }
         return clusters;
     }
 
+    function findDestination() {
+        var players = getPlayers();
+        var numSplits = players.length;
+        // Player the bot controls is the player with minimum size
+        var player = _.min(players, function(p) {
+            return p.n;
+        });
+        var food = getAllFood(player); // Maybe cluster later
+        var prey = getAllPrey(player);
+        var threats = getAllThreats(player);
+
+        // Maximize food per meter traveled
+        var bestFood = _.max(food, function (f) {
+            return f.size / distance(player, f);
+        });
+
+        var split, splitTo;
+        if (numSplits == 1 && prey.length > 0 && player.n > 35) {
+            splitTo = _.max(prey, function (p) {
+                return p.n;
+            });
+            split = true;
+            console.log('split!', player.n);
+        }
+
+        var avoid = null;
+        if (! _.isEmpty(threats)) {
+            var ds = {x:0, y:0};
+            threats.forEach(function (t) {
+                ds = addVec(ds, subVec(t, player));
+            });
+            avoid = {x: player.x - ds.x, y: player.y - ds.y};
+        }
+
+        var goalPoint = avoid || splitTo || bestFood;
+
+        // Draw elements
+        food.forEach(function(e) {
+            drawPointE(e, 1, "");
+        });
+        threats.forEach(function(e) {
+            drawCircleE(e, e.size* 1.5 , 3);
+        });
+        drawLineE(player, goalPoint);
+
+        return [goalPoint.x, goalPoint.y, split];
+    };
+
     function getAngle(x1, y1, x2, y2) {
         //Handle vertical and horizontal lines.
-
         if (x1 == x2) {
             if (y1 < y2) {
                 return 271;
@@ -242,13 +229,11 @@ console.log("Running Apos Bot!");
                 return 89;
             }
         }
-
         return (Math.round(Math.atan2(-(y1 - y2), -(x1 - x2)) / Math.PI * 180 + 180));
     }
 
     function slope(x1, y1, x2, y2) {
         var m = (y1 - y2) / (x1 - x2);
-
         return m;
     }
 
@@ -379,7 +364,7 @@ console.log("Running Apos Bot!");
     }
 
     function debugAngle(angle, text) {
-        var player = getPlayer();
+        var player = getPlayers();
         var line1 = followAngle(angle, player[0].x, player[0].y, 300);
         drawLine(player[0].x, player[0].y, line1[0], line1[1], 5);
         drawPoint(line1[0], line1[1], 5, "" + text);
@@ -387,7 +372,7 @@ console.log("Running Apos Bot!");
 
     function getEdgeLinesFromPoint(blob1, blob2) {
         // find tangents
-        // 
+        //
         // TODO: DON'T FORGET TO HANDLE IF BLOB1'S CENTER POINT IS INSIDE BLOB2!!!
         var px = blob1.x;
         var py = blob1.y;
@@ -466,7 +451,7 @@ console.log("Running Apos Bot!");
         if (blob.y < f.getMapStartY() + 1000) {
             //TOP
             //console.log("TOP");
-            
+
             listToUse.push([[225, true], [315, false]]);
 
             var lineLeft = followAngle(225, blob.x, blob.y, 190 + blob.size);
@@ -480,7 +465,7 @@ console.log("Running Apos Bot!");
             //console.log("RIGHT");
 
             listToUse.push([[315, true], [45, false]]);
-            
+
             var lineLeft = followAngle(315, blob.x, blob.y, 190 + blob.size);
             var lineRight = followAngle(45, blob.x, blob.y, 190 + blob.size);
             drawLine(blob.x, blob.y, lineLeft[0], lineLeft[1], 5);
@@ -492,7 +477,7 @@ console.log("Running Apos Bot!");
             //console.log("BOTTOM");
 
             listToUse.push([[45, true], [135, false]]);
-            
+
             var lineLeft = followAngle(45, blob.x, blob.y, 190 + blob.size);
             var lineRight = followAngle(135, blob.x, blob.y, 190 + blob.size);
             drawLine(blob.x, blob.y, lineLeft[0], lineLeft[1], 5);
@@ -506,7 +491,7 @@ console.log("Running Apos Bot!");
     //listToUse contains angles in the form of [angle, boolean].
     //boolean is true when the range is starting. False when it's ending.
     //range = [[angle1, true], [angle2, false]]
-    
+
     function getAngleIndex(listToUse, angle) {
         if (listToUse.length == 0) {
             return 0;
@@ -520,7 +505,7 @@ console.log("Running Apos Bot!");
 
         return listToUse.length;
     }
-    
+
     function addAngle(listToUse, range) {
         //#1 Find first open element
         //#2 Try to add range1 to the list. If it is within other range, don't add it, set a boolean.
@@ -579,245 +564,6 @@ console.log("Running Apos Bot!");
         return listToUse;
     }
 
-
-    function findDestination() {
-        var player = getPlayer();
-        var interNodes = getMemoryCells();
-
-        if ( /*!toggle*/ 1) {
-            var useMouseX = (getMouseX() - getWidth() / 2 + getX() * getRatio()) / getRatio();
-            var useMouseY = (getMouseY() - getHeight() / 2 + getY() * getRatio()) / getRatio();
-            tempPoint = [useMouseX, useMouseY, 1];
-
-            var tempMoveX = getPointX();
-            var tempMoveY = getPointY();
-
-            if (player.length > 0) {
-
-                for (var k = 0; k < player.length; k++) {
-
-                    console.log("Working on blob: " + k);
-
-                    drawCircle(player[k].x, player[k].y, player[k].size + splitDistance, 5);
-                    //drawPoint(player[0].x, player[0].y - player[0].size, 3, "" + Math.floor(player[0].x) + ", " + Math.floor(player[0].y));
-
-                    //var allDots = processEverything(interNodes);
-
-                    var allPossibleFood = null;
-                    allPossibleFood = getAllFood(player[k]); // #1
-
-                    var allPossibleThreats = getAllThreats(player[k]);
-                    //console.log("Internodes: " + interNodes.length + " Food: " + allPossibleFood.length + " Threats: " + allPossibleThreats.length);
-
-                    var badAngles = [];
-
-                    var isSafeSpot = true;
-                    var isMouseSafe = true;
-
-                    var clusterAllFood = clusterFood(allPossibleFood, player[k].size);
-
-                    console.log("Looking for enemies!");
-
-                    for (var i = 0; i < allPossibleThreats.length; i++) {
-
-                        var enemyDistance = computeDistance(allPossibleThreats[i].x, allPossibleThreats[i].y, player[k].x, player[k].y);
-
-                        console.log("Found distance.");
-                        
-                        for (var j = clusterAllFood.length - 1; j >= 0 ; j--) {
-                            var secureDistance = (canSplit(player[k], allPossibleThreats[i]) ? splitDistance : player[k].size*2) + allPossibleThreats[i].size;
-                            if (computeDistance(allPossibleThreats[i].x, allPossibleThreats[i].y, clusterAllFood[j][0], clusterAllFood[j][1]) < secureDistance)
-                                clusterAllFood.splice(j, 1);
-                        }
-
-                        console.log("Removed some food.");
-
-                        if (canSplit(player[k], allPossibleThreats[i])) {
-                            drawCircle(allPossibleThreats[i].x, allPossibleThreats[i].y, allPossibleThreats[i].size + splitDistance, 0);
-                        } else {
-                            drawCircle(allPossibleThreats[i].x, allPossibleThreats[i].y, allPossibleThreats[i].size + player[k].size + player[k].size, 3);
-                        }
-
-                        if (allPossibleThreats[i].danger && f.getLastUpdate() - allPossibleThreats[i].dangerTimeOut > 1000) {
-
-                            allPossibleThreats[i].danger = false;
-                        }
-
-                        if ((canSplit(player[k], allPossibleThreats[i]) && enemyDistance < allPossibleThreats[i].size + splitDistance + player[k].size) || (!canSplit(player[k], allPossibleThreats[i]) && enemyDistance < allPossibleThreats[i].size + player[k].size + player[k].size)) {
-
-                            allPossibleThreats[i].danger = true;
-                            allPossibleThreats[i].dangerTimeOut = f.getLastUpdate();
-                        }
-
-                        console.log("Figured out who was important.");
-
-                        if ((canSplit(player[k], allPossibleThreats[i]) && enemyDistance < allPossibleThreats[i].size + splitDistance + player[k].size) || (!canSplit(player[k], allPossibleThreats[i]) && enemyDistance < allPossibleThreats[i].size + player[k].size) || allPossibleThreats[i].danger) {
-
-                            var offsetX = player[k].x;
-                            var offsetY = player[k].y;
-
-                            var enemyAngleStuff = getEdgeLinesFromPoint(player[k], allPossibleThreats[i]);
-
-                            var leftAngle = enemyAngleStuff[0];
-                            var rightAngle = rangeToAngle(enemyAngleStuff);
-                            var difference = enemyAngleStuff[1];
-
-                            drawPoint(enemyAngleStuff[2][0], enemyAngleStuff[2][1], 3, "");
-                            drawPoint(enemyAngleStuff[3][0], enemyAngleStuff[3][1], 3, "");
-
-                            badAngles.push([leftAngle, difference]);
-
-                            //console.log("Adding badAngles: " + leftAngle + ", " + rightAngle + " diff: " + difference);
-
-                            var lineLeft = followAngle(leftAngle, player[k].x, player[k].y, 200 + player[k].size - i * 10);
-                            var lineRight = followAngle(rightAngle, player[k].x, player[k].y, 200 + player[k].size - i * 10);
-                            if (getCells().hasOwnProperty(allPossibleThreats[i].id)) {
-                                drawLine(player[k].x, player[k].y, lineLeft[0], lineLeft[1], 0);
-                                drawLine(player[k].x, player[k].y, lineRight[0], lineRight[1], 0);
-                                drawArc(lineLeft[0], lineLeft[1], lineRight[0], lineRight[1], player[k].x, player[k].y, 0);
-                            } else {
-                                drawLine(player[k].x, player[k].y, lineLeft[0], lineLeft[1], 3);
-                                drawLine(player[k].x, player[k].y, lineRight[0], lineRight[1], 3);
-                                drawArc(lineLeft[0], lineLeft[1], lineRight[0], lineRight[1], player[k].x, player[k].y, 3);
-                            }
-                            //drawPoint(lineLeft[0], lineLeft[1], 0, "Left 0 - " + i);
-                            //drawPoint(lineRight[0], lineRight[1], 0, "Right 1 - " + i);
-                        }
-                        console.log("Done with enemy: " + i);
-                    }
-
-                    console.log("Done looking for enemies!");
-
-                    var goodAngles = [];
-                    var stupidList = [];
-                    if (badAngles.length > 0) {
-                        //NOTE: This is only bandaid wall code. It's not the best way to do it.
-                        stupidList = addWall(stupidList, player[k]);
-                    }
-
-                    for (var i = 0; i < badAngles.length; i++) {
-                        var angle1 = badAngles[i][0];
-                        var angle2 = rangeToAngle(badAngles[i]);
-                        stupidList.push([[angle1, true], [angle2, false]]);
-                    }
-
-                    //stupidList.push([[45, true], [135, false]]);
-                    //stupidList.push([[10, true], [200, false]]);
-
-                    //console.log("Added random noob stuff.");
-
-                    var sortedInterList = [];
-
-                    for (var i = 0; i < stupidList.length; i++) {
-                        //console.log("Adding to sorted: " + stupidList[i][0][0] + ", " + stupidList[i][1][0]);
-                        sortedInterList = addAngle(sortedInterList, stupidList[i])
-
-                        if (sortedInterList.length == 0) {
-                            break;
-                        }
-                    }
-
-
-                    var offsetI = 0;
-
-                    if (sortedInterList.length > 0 && sortedInterList[0][1]) {
-                        offsetI = 1;
-                    }
-
-                    var goodAngles = [];
-                    for (var i = 0; i < sortedInterList.length; i += 2) {
-                        var angle1 = sortedInterList[(i + offsetI).mod(sortedInterList.length)][0];
-                        var angle2 = sortedInterList[(i + 1 + offsetI).mod(sortedInterList.length)][0];
-                        var diff = (angle2 - angle1).mod(360);
-                        goodAngles.push([angle1, diff]);
-                    }
-
-                    for (var i = 0; i < goodAngles.length; i++) {
-                        var line1 = followAngle(goodAngles[i][0], player[k].x, player[k].y, 100 + player[k].size);
-                        var line2 = followAngle((goodAngles[i][0] + goodAngles[i][1]).mod(360), player[k].x, player[k].y, 100 + player[k].size);
-                        drawLine(player[k].x, player[k].y, line1[0], line1[1], 1);
-                        drawLine(player[k].x, player[k].y, line2[0], line2[1], 1);
-
-
-                        drawArc(line1[0], line1[1], line2[0], line2[1], player[k].x, player[k].y, 1);
-
-                        //drawPoint(player[0].x, player[0].y, 2, "");
-
-                        drawPoint(line1[0], line1[1], 0, "" + i + ": 0");
-                        drawPoint(line2[0], line2[1], 0, "" + i + ": 1");
-                    }
-
-                    if (goodAngles.length > 0) {
-                        var bIndex = goodAngles[0];
-                        var biggest = goodAngles[0][1];
-                        for (var i = 1; i < goodAngles.length; i++) {
-                            var size = goodAngles[i][1];
-                            if (size > biggest) {
-                                biggest = size;
-                                bIndex = goodAngles[i];
-                            }
-                        }
-                        var perfectAngle = (bIndex[0] + bIndex[1] / 2).mod(360);
-                        var line1 = followAngle(perfectAngle, player[k].x, player[k].y, 300);
-
-                        drawLine(player[k].x, player[k].y, line1[0], line1[1], 7);
-                        tempMoveX = line1[0];
-                        tempMoveY = line1[1];
-                    } else if (badAngles.length > 0 && goodAngles == 0) {
-                        //TODO: CODE TO HANDLE WHEN THERE IS NO GOOD ANGLE BUT THERE ARE ENEMIES AROUND!!!!!!!!!!!!!
-                    } else if (clusterAllFood.length > 0) {
-                        for (var i = 0; i < clusterAllFood.length; i++) {
-                            //console.log("mefore: " + clusterAllFood[i][2]);
-                            //This is the cost function. Higher is better.
-
-                                var clusterAngle = getAngle(clusterAllFood[i][0], clusterAllFood[i][1], player[k].x, player[k].y);
-
-                                clusterAllFood[i][2] = clusterAllFood[i][2] * 6 - computeDistance(clusterAllFood[i][0], clusterAllFood[i][1], player[k].x, player[k].y);
-                                //console.log("Current Value: " + clusterAllFood[i][2]);
-
-                                //(goodAngles[bIndex][1] / 2 - (Math.abs(perfectAngle - clusterAngle)));
-
-                                clusterAllFood[i][3] = clusterAngle;
-
-                                drawPoint(clusterAllFood[i][0], clusterAllFood[i][1], 1, "");
-                                //console.log("After: " + clusterAllFood[i][2]);
-                        }
-
-                        var bestFoodI = 0;
-                        var bestFood = clusterAllFood[0][2];
-                        for (var i = 1; i < clusterAllFood.length; i++) {
-                            if (bestFood < clusterAllFood[i][2]) {
-                                bestFood = clusterAllFood[i][2];
-                                bestFoodI = i;
-                            }
-                        }
-
-                        //console.log("Best Value: " + clusterAllFood[bestFoodI][2]);
-
-                        tempMoveX = clusterAllFood[bestFoodI][0];
-                        tempMoveY = clusterAllFood[bestFoodI][1];
-                        drawLine(player[k].x, player[k].y, tempMoveX, tempMoveY, 1);
-                    } else {
-                        //If there are no enemies around and no food to eat.
-                    }
-
-                    drawPoint(tempPoint[0], tempPoint[1], tempPoint[2], "");
-                    //drawPoint(tempPoint[0], tempPoint[1], tempPoint[2], "" + Math.floor(computeDistance(tempPoint[0], tempPoint[1], I, J)));
-                    //drawLine(tempPoint[0], tempPoint[1], player[0].x, player[0].y, 6);
-                    //console.log("Slope: " + slope(tempPoint[0], tempPoint[1], player[0].x, player[0].y) + " Angle: " + getAngle(tempPoint[0], tempPoint[1], player[0].x, player[0].y) + " Side: " + (getAngle(tempPoint[0], tempPoint[1], player[0].x, player[0].y) - 90).mod(360));
-                    tempPoint[2] = 1;
-
-                    console.log("Done working on blob: " + i);
-                }
-            }
-            //console.log("MOVING RIGHT NOW!");
-
-            //console.log("______Never lied ever in my life.");
-
-            return [tempMoveX, tempMoveY];
-        }
-    }
-
     function screenToGameX(x) {
         return (x - getWidth() / 2) / getRatio() + getX();
     }
@@ -842,6 +588,22 @@ console.log("Running Apos Bot!");
         f.drawCircle(x_1, y_1, radius, drawColor);
     }
 
+    function drawLineE(a, b, drawColor) {
+        f.drawLine(a.x, a.y, b.x, b.y, drawColor);
+    }
+
+    function drawPointE(a, drawColor, text) {
+        f.drawPoint(a.x, a.y, drawColor, text);
+    }
+
+    function drawArcE(a, b, c, drawColor) {
+        f.drawArc(a.x, a.y, b.x, b.y, c.x, c.y, drawColor);
+    }
+
+    function drawCircleE(a, radius, drawColor) {
+        f.drawCircle(a.x, a.y, radius, drawColor);
+    }
+
     function screenDistance() {
         var temp = f.getScreenDistance();
         return temp;
@@ -856,7 +618,10 @@ console.log("Running Apos Bot!");
     }
 
     function getMemoryCells() {
-        return f.getMemoryCells();
+        var cells = f.getMemoryCells();
+        return _.map(Object.keys(cells), function (e) {
+            return cells[e];
+        });
     }
 
     function getCellsArray() {
@@ -867,7 +632,7 @@ console.log("Running Apos Bot!");
         return f.getCells();
     }
 
-    function getPlayer() {
+    function getPlayers() {
         return f.getPlayer();
     }
 
